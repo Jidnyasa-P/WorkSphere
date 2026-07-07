@@ -136,6 +136,17 @@ export function EnhancedChatbot({ onMapUpdate, onOpenDetails, onBook, userLocati
     }
   }, [location, getPreciseLocation]);
 
+  useEffect(() => {
+    if (userLocation) {
+      setLocation((prev) => {
+        if (prev && prev.lat === userLocation.lat && prev.lng === userLocation.lng) {
+          return prev;
+        }
+        return userLocation;
+      });
+    }
+  }, [userLocation]);
+
   const handleLocationChange = (lat: number, lng: number) => {
     if (lat === 0 && lng === 0) {
       getPreciseLocation();
@@ -465,7 +476,7 @@ export function EnhancedChatbot({ onMapUpdate, onOpenDetails, onBook, userLocati
     <div className="flex h-full flex-col bg-white dark:bg-zinc-950">
       <ChatHeader
         onOpenVenueSubmission={() => setShowVenueSubmission(true)}
-        userLocation={userLocation}
+        userLocation={location}
         onLocationChange={handleLocationChange}
         filters={filters}
         showFilters={showFilters}
