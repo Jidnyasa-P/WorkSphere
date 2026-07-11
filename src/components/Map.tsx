@@ -21,31 +21,36 @@ if (typeof window !== "undefined" && process.env.NODE_ENV !== "test") {
   require("leaflet.heat");
 }
 
-// Custom venue marker for dark theme - purple/blue dot
-const venueIcon = L.divIcon({
-  className: "venue-marker",
-  html: `<div class="venue-dot"></div>`,
-  iconSize: [24, 24],
-  iconAnchor: [12, 12],
-  popupAnchor: [0, -12],
-});
+// Custom venue marker for dark theme - purple/blue dot - client-safe setup
+let venueIcon: any;
+let destinationIcon: any;
 
-// Destination marker - like the reference image
-const destinationIcon = L.divIcon({
-  className: "destination-marker",
-  html: `<div class="destination-pin"><span>D</span></div>`,
-  iconSize: [32, 32],
-  iconAnchor: [16, 32],
-  popupAnchor: [0, -32],
-});
+if (typeof window !== "undefined") {
+  venueIcon = L.divIcon({
+    className: "venue-marker",
+    html: `<div class="venue-dot"></div>`,
+    iconSize: [24, 24],
+    iconAnchor: [12, 12],
+    popupAnchor: [0, -12],
+  });
 
-// Also fix the global default:
-delete (L.Icon.Default.prototype as any)._getIconUrl;
-L.Icon.Default.mergeOptions({
-  iconRetinaUrl: "/leaflet/marker-icon-2x.png",
-  iconUrl: "/leaflet/marker-icon.png",
-  shadowUrl: "/leaflet/marker-shadow.png",
-});
+  // Destination marker - like the reference image
+  destinationIcon = L.divIcon({
+    className: "destination-marker",
+    html: `<div class="destination-pin"><span>D</span></div>`,
+    iconSize: [32, 32],
+    iconAnchor: [16, 32],
+    popupAnchor: [0, -32],
+  });
+
+  // Also fix the global default:
+  delete (L.Icon.Default.prototype as any)._getIconUrl;
+  L.Icon.Default.mergeOptions({
+    iconRetinaUrl: "/leaflet/marker-icon-2x.png",
+    iconUrl: "/leaflet/marker-icon.png",
+    shadowUrl: "/leaflet/marker-shadow.png",
+  });
+}
 
 function MapController({ mapView }: { mapView: MapView | null }) {
   const map = useMap();
@@ -140,6 +145,11 @@ const Map = ({
   const clerkUser = useUser();
   const { latitude, longitude } = location;
 
+  const [mounted, setMounted] = useState(process.env.NODE_ENV === "test");
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   // =========================================================================
   // MULTI-STOP ROUTING OPTIMIZER STATE PARAMETERS
@@ -227,6 +237,14 @@ const Map = ({
   }, [iconUrl]);
 
   const center: [number, number] = [latitude, longitude];
+
+  if (!mounted) {
+    return (
+      <div className="w-[95%] h-[95%] min-h-[400px] flex items-center justify-center bg-zinc-100 dark:bg-zinc-900 rounded-xl border border-zinc-200 dark:border-zinc-800">
+        <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+      </div>
+    );
+  }
 
   return (
 <>
@@ -367,45 +385,49 @@ const Map = ({
         )}
 
 
-        {markers
-          .filter((marker) => marker && marker.position && marker.position.lat != null && marker.position.lng != null && !isNaN(Number(marker.position.lat)) && !isNaN(Number(marker.position.lng)))
-          .map((marker) => (
-            <Marker
-              key={marker.id}
-              position={[Number(marker.position.lat), Number(marker.position.lng)]}
-              icon={marker.id.includes("dest") ? destinationIcon : venueIcon}
-            >
-              <Popup>
-                <div className="text-sm">
-                  <div className="font-semibold text-white">{marker.name}</div>
-                  {marker.category && (
-                    <div className="text-zinc-400">{marker.category}</div>
-                  )}
-                  {marker.address && (
-                    <div className="text-zinc-500 text-xs mt-1">{marker.address}</div>
-                  )}
-                </div>
-                <button
-                  onClick={() => {
-                    // Prevent duplicates in queue chain matrix
-                    if (!routingQueue.some(v => v.id === marker.id)) {
-                      const updated = [...routingQueue, {
-                        id: marker.id,
-                        name: marker.name,
-                        latitude: Number(marker.position.lat),
-                        longitude: Number(marker.position.lng)
-                      }];
-                      setRoutingQueue(updated);
-                      calculateOptimizedRoute(updated);
-                    }
-                  }}
-                  className="mt-2 w-full rounded bg-zinc-800 py-1 text-[10px] font-medium text-zinc-200 hover:bg-blue-600 hover:text-white transition-colors"
-                >
-                  ➕ Add to Workday Timeline
-                </button>
-              </Popup>
-            </Marker>
-          ))}
+        {showHeatmap ? (
+          <HeatmapOverlay points={heatmapPoints} visible={showHeatmap} />
+        ) : (
+          markers
+            .filter((marker) => marker && marker.position && marker.position.lat != null && marker.position.lng != null && !isNaN(Number(marker.position.lat)) && !isNaN(Number(marker.position.lng)))
+            .map((marker) => (
+              <Marker
+                key={marker.id}
+                position={[Number(marker.position.lat), Number(marker.position.lng)]}
+                icon={marker.id.includes("dest") ? destinationIcon : venueIcon}
+              >
+                <Popup>
+                  <div className="text-sm">
+                    <div className="font-semibold text-white">{marker.name}</div>
+                    {marker.category && (
+                      <div className="text-zinc-400">{marker.category}</div>
+                    )}
+                    {marker.address && (
+                      <div className="text-zinc-500 text-xs mt-1">{marker.address}</div>
+                    )}
+                  </div>
+                  <button
+                    onClick={() => {
+                      // Prevent duplicates in queue chain matrix
+                      if (!routingQueue.some(v => v.id === marker.id)) {
+                        const updated = [...routingQueue, {
+                          id: marker.id,
+                          name: marker.name,
+                          latitude: Number(marker.position.lat),
+                          longitude: Number(marker.position.lng)
+                        }];
+                        setRoutingQueue(updated);
+                        calculateOptimizedRoute(updated);
+                      }
+                    }}
+                    className="mt-2 w-full rounded bg-zinc-800 py-1 text-[10px] font-medium text-zinc-200 hover:bg-blue-600 hover:text-white transition-colors"
+                  >
+                    ➕ Add to Workday Timeline
+                  </button>
+                </Popup>
+              </Marker>
+            ))
+        )}
 
         {/* Render OSRM Optimized Multi-Stop Routing Layer Geometry */}
         {optimizedRoute && optimizedRoute.coordinates && optimizedRoute.coordinates.length > 1 && (
@@ -428,33 +450,9 @@ const Map = ({
               </div>
             </Popup>
           </Polyline>
-
-        {showHeatmap ? (
-          <HeatmapOverlay points={heatmapPoints} visible={showHeatmap} />
-        ) : (
-          markers
-            .filter((marker) => marker && marker.position && marker.position.lat != null && marker.position.lng != null && !isNaN(Number(marker.position.lat)) && !isNaN(Number(marker.position.lng)))
-            .map((marker) => (
-              <Marker
-                key={marker.id}
-                position={[Number(marker.position.lat), Number(marker.position.lng)]}
-                icon={marker.id.includes("dest") ? destinationIcon : venueIcon}
-              >
-                <Popup>
-                  <div className="text-sm">
-                    <div className="font-semibold text-white">{marker.name}</div>
-                    {marker.category && (
-                      <div className="text-zinc-400">{marker.category}</div>
-                    )}
-                    {marker.address && (
-                      <div className="text-zinc-500 text-xs mt-1">{marker.address}</div>
-                    )}
-                  </div>
-                </Popup>
-              </Marker>
-            ))
-
         )}
+
+
 
         {routes.map((route) => {
           const validPositions = (route.path || [])
