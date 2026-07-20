@@ -55,6 +55,7 @@ model User {
   currentStreak    Int      @default(0)
   longestStreak    Int      @default(0)
   lastCheckInDate  String?  // stored as "YYYY-MM-DD" UTC
+  passkeys         PasskeyCredential[]
 }
 
 model Venue {
@@ -599,6 +600,20 @@ model CheckIn {
   @@index([expiresAt])
 }
 
+model PasskeyCredential {
+  id           String   @id @default(cuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  credentialId String   @unique
+  publicKey    Bytes
+  counter      BigInt   @default(0)
+  transports   String[] @default([])
+  deviceType   String   @default("singleDevice")
+  backedUp     Boolean  @default(false)
+  name         String
+  aaguid       String?
+  createdAt    DateTime @default(now())
+  lastUsedAt   DateTime @default(now())
 model PushSubscription {
   id         String    @id @default(cuid())
   userId     String
@@ -613,6 +628,14 @@ model PushSubscription {
   @@index([userId])
 }
 
+model PasskeyChallenge {
+  id        String   @id @default(cuid())
+  userId    String?
+  challenge String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([challenge])
 model PushNotificationLog {
   id        String   @id @default(cuid())
   userId    String

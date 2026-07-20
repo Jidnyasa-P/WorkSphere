@@ -1,6 +1,7 @@
 import { SignIn } from "@clerk/nextjs";
 import Link from "next/link";
 import { MapPin, Sparkles } from "lucide-react";
+import { PasskeySignInButton } from "@/components/auth/PasskeySignInButton";
 import { PasskeyFrameNotice } from "@/components/PasskeyFrameNotice";
 
 export default function SignInPage() {
@@ -64,6 +65,8 @@ export default function SignInPage() {
             </Link>
           </div>
 
+          <div className="w-full space-y-4">
+            <PasskeySignInButton />
           <div className="w-full">
              <PasskeyFrameNotice />
             <SignIn
@@ -80,6 +83,9 @@ export default function SignInPage() {
                   dividerText: "text-zinc-500",
                   formFieldLabel: "text-zinc-300 font-medium",
                   formFieldInput:
+                    "bg-zinc-800/80 border-zinc-700 text-white placeholder:text-zinc-500 rounded-xl focus:border-blue-500 focus:ring-blue-500/20",
+                  footerActionLink:
+                    "text-blue-400 hover:text-blue-300 font-medium",
                     "bg-zinc-800/80 border-zinc-700 text-white placeholder:text-zinc-500 rounded-xl focus:border-[var(--primary-accent)] focus:ring-[color-mix(in_srgb,var(--primary-accent),transparent_0.8)]",
                   footerActionLink: "accent-text font-medium",
                   formButtonPrimary:
@@ -95,6 +101,10 @@ export default function SignInPage() {
 
           <p className="mt-6 text-center text-sm text-zinc-500">
             Don&apos;t have an account?{" "}
+            <Link
+              href="/sign-up"
+              className="text-blue-400 hover:text-blue-300 font-medium"
+            >
             <Link href="/sign-up" className="accent-text font-medium">
               Sign up free
             </Link>
