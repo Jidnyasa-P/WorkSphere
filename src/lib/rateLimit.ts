@@ -5,44 +5,7 @@
  * Development: Falls back to an in-memory sliding window automatically
  */
 
-/**
- * Token Bucket Rate Limiting Lua Script for Upstash Redis.
- *
- * Uses a hash to store (tokens, lastRefill) and atomically refills tokens
- * based on elapsed time. Handles concurrent burst traffic correctly because
- * the Lua script executes atomically — no duplicate-member issue that the
- * previous sliding-window ZADD approach had.
- */
-export const TOKEN_BUCKET_LUA = `
-local key = KEYS[1]
-local now = tonumber(ARGV[1])
-local limit = tonumber(ARGV[2])
-local window_seconds = tonumber(ARGV[3])
-
-local state = redis.call('HMGET', key, 'tokens', 'lastRefill')
-local tokens = tonumber(state[1])
-local lastRefill = tonumber(state[2])
-
-if tokens == nil then
-    redis.call('HMSET', key, 'tokens', limit - 1, 'lastRefill', now)
-    redis.call('EXPIRE', key, window_seconds)
-    return 1
-end
-
-local elapsed_ms = math.max(0, now - lastRefill)
-local refill = math.floor(elapsed_ms / (window_seconds * 1000) * limit)
-tokens = math.min(limit, tokens + refill)
-
-if tokens >= 1 then
-    tokens = tokens - 1
-    redis.call('HMSET', key, 'tokens', tokens, 'lastRefill', now)
-    redis.call('EXPIRE', key, window_seconds)
-    return 1
-else
-    redis.call('EXPIRE', key, window_seconds)
-    return 0
-end
-`;
+const WINDOW_MS = 60_000;
 
 let redisClient: any = null;
 
@@ -68,6 +31,12 @@ function getRedisClient() {
   }
 }
 
+/**
+ * Sliding-window check in one MULTI/EXEC:
+ * ZREMRANGEBYSCORE → ZADD → ZCARD → EXPIRE.
+ * Avoids Lua `eval` timeouts under ~200 RPS while keeping prune+count+write atomic
+ * so concurrent bursts cannot all pass on a stale ZCARD (issue #1034).
+ */
 async function upstashRateLimit(
   identifier: string,
   limit: number,
@@ -77,26 +46,30 @@ async function upstashRateLimit(
 
   try {
     const now = Date.now();
-    const windowSeconds = 60;
+    const windowStart = now - WINDOW_MS;
+    const windowSeconds = Math.ceil(WINDOW_MS / 1000);
     const key = `worksphere:ratelimit:${identifier}`;
-
-    const allowed = await redis.eval(
-      TOKEN_BUCKET_LUA,
-      [key],
-      [now, limit, windowSeconds],
+    const member = microTimestampMember(
+      Math.floor(now / 1000),
+      (now % 1000) * 1000,
+      `${Math.random().toString(36).slice(2, 10)}`,
     );
-    const windowMs = 60_000;
-    const windowSeconds = Math.ceil(windowMs / 1000);
-    const windowMinute = Math.floor(Date.now() / windowMs);
-    const key = `worksphere:ratelimit:${identifier}:${windowMinute}`;
 
     const tx = redis.multi();
-    tx.incr(key);
+    tx.zremrangebyscore(key, 0, windowStart);
+    tx.zadd(key, { score: now, member });
+    tx.zcard(key);
     tx.expire(key, windowSeconds);
     const result = await tx.exec();
 
-    const count = result[0] as number;
-    return count <= limit;
+    // MULTI result order: rem, add, card, expire
+    const count = Number(result?.[2] ?? 0);
+    if (count > limit) {
+      await redis.zrem(key, member);
+      return false;
+    }
+
+    return true;
   } catch {
     return memRateLimit(identifier, limit);
   }
@@ -108,7 +81,6 @@ interface MemEntry {
   resetTime: number;
 }
 const memStore = new Map<string, MemEntry>();
-const WINDOW_MS = 60_000;
 
 interface RateLimitInfo {
   count: number;
